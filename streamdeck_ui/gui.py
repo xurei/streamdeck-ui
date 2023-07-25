@@ -4,6 +4,7 @@ import shlex
 import signal
 import sys
 import time
+import json
 from functools import partial
 from subprocess import Popen  # nosec - Need to allow users to specify arbitrary commands
 from typing import Dict, Optional
@@ -19,6 +20,8 @@ from streamdeck_ui.config import LOGO, STATE_FILE
 from streamdeck_ui.semaphore import Semaphore, SemaphoreAcquireError
 from streamdeck_ui.ui_main import Ui_MainWindow
 from streamdeck_ui.ui_settings import Ui_SettingsDialog
+
+import paho.mqtt.client as mqtt
 
 pnput_supported: bool = True
 try:
@@ -839,6 +842,12 @@ def start(_exit: bool = False) -> None:
     elif "-n" in sys.argv or "--no-ui" in sys.argv:
         show_ui = False
 
+    client = mqtt.Client()
+    client.on_connect = mqtt_on_connect
+    client.on_message = mqtt_on_message
+    client.connect("192.168.0.31", 1883, 60)
+    client.loop_start()
+
     try:
         version = pkg_resources.get_distribution("streamdeck_ui").version
     except pkg_resources.DistributionNotFound:
@@ -901,6 +910,26 @@ def start(_exit: bool = False) -> None:
         # The semaphore already exists, so another instance is running
         sys.exit()
 
+
+def mqtt_on_connect(client, userdata, flags, rc):
+    print("Connected with result code "+str(rc))
+
+    # Subscribing in on_connect() means that if we lose the connection and
+    # reconnect then subscriptions will be renewed.
+    #client.subscribe("$SYS/#")
+    client.subscribe("streamdeck-image")
+
+def mqtt_on_message(client, userdata, msg):
+    print("MQTT MESSAGE")
+    print(msg.topic+" "+str(msg.payload))
+    if msg.topic == "streamdeck-image":
+        payload = json.loads(msg.payload)
+        page = payload["page"]
+        line = payload["line"]
+        column = payload["column"]
+        image = payload["image"]
+        print(msg.topic+" "+str(payload["line"]))
+        api.set_button_icon("DL19L2A84246", page, line*5+column, image)
 
 if __name__ == "__main__":
     start()
